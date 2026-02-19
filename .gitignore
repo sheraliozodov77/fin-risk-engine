@@ -1,0 +1,164 @@
+# =============================================================================
+# fin-risk-engine .gitignore
+# =============================================================================
+
+# =============================================================================
+# Python
+# =============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytype/
+.mypy_cache/
+.ruff_cache/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+
+# Pip tooling
+pip-log.txt
+pip-delete-this-directory.txt
+
+# =============================================================================
+# Virtual Environments
+# =============================================================================
+.finvenv/
+.venv/
+venv/
+env/
+ENV/
+
+# =============================================================================
+# Testing / Coverage
+# =============================================================================
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+.hypothesis/
+junit.xml
+nosetests.xml
+
+# =============================================================================
+# Jupyter / Notebooks
+# =============================================================================
+.ipynb_checkpoints/
+
+# =============================================================================
+# IDE / Editor
+# =============================================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# =============================================================================
+# OS Files
+# =============================================================================
+.DS_Store
+.DS_Store?
+Thumbs.db
+desktop.ini
+
+# =============================================================================
+# Secrets & Environment
+# =============================================================================
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+secrets.json
+credentials.json
+# .env.example is intentionally NOT ignored (template only, no real secrets)
+
+# =============================================================================
+# Raw Data (large files — place in data/raw/ after cloning)
+# transactions_data.csv ~1.2GB, train_fraud_labels.json ~159MB
+# =============================================================================
+data/raw/*.csv
+data/raw/*.json
+data/raw/*.parquet
+!data/raw/.gitkeep
+
+# =============================================================================
+# Processed Data (generated — run build_features_and_splits.py to recreate)
+# =============================================================================
+data/processed/*.parquet
+data/processed/*.feather
+data/processed/*.h5
+data/processed/behavioral/
+!data/processed/.gitkeep
+
+# =============================================================================
+# Model Artifacts (generated — run train_model.py to recreate)
+# =============================================================================
+outputs/models/*.cbm
+outputs/models/*.json
+outputs/models/*.joblib
+outputs/models/*.pkl
+outputs/models/*.onnx
+outputs/models/*.pt
+outputs/models/*.pth
+!outputs/models/.gitkeep
+
+# =============================================================================
+# Tuning Results — INTENTIONALLY TRACKED
+# outputs/tuning/catboost_best_params.json  (20 Optuna trials)
+# outputs/tuning/xgboost_best_params.json   (10 Optuna trials)
+# These are small (<2KB) and needed to reproduce training without re-running tuning
+# =============================================================================
+
+# =============================================================================
+# Batch Predictions / Scored Artifacts (generated)
+# =============================================================================
+outputs/artifacts/*.csv
+outputs/artifacts/*.parquet
+!outputs/artifacts/.gitkeep
+
+# =============================================================================
+# CatBoost Training Logs (large TSV files, generated each training run)
+# =============================================================================
+outputs/catboost_info/**
+!outputs/catboost_info/.gitkeep
+outputs/catboost_info_root_backup/
+
+# =============================================================================
+# Reports (generated — run evaluate_model.py to recreate)
+# =============================================================================
+outputs/reports/*.html
+outputs/reports/*.png
+!outputs/reports/.gitkeep
+
+# =============================================================================
+# Benchmark Results (generated — run run_benchmark.py)
+# =============================================================================
+outputs/benchmark/
+
+# =============================================================================
+# Logs
+# =============================================================================
+*.log
+logs/
+
+# =============================================================================
+# Claude Code Session Data
+# =============================================================================
+.claude/
+docs/20[0-9][0-9]-*.txt
+
+# =============================================================================
+# MLflow / W&B (WS3 — generated experiment tracking data)
+# =============================================================================
+mlruns/
+mlflow.db
+wandb/

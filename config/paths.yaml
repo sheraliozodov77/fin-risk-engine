@@ -1,0 +1,23 @@
+# Data paths and output directories
+# All paths relative to project root unless absolute
+
+project_root: "."  # or set via env PROJECT_ROOT
+
+data:
+  raw:
+    transactions: "data/raw/transactions_data.csv"
+    cards: "data/raw/cards_data.csv"
+    users: "data/raw/users_data.csv"
+    mcc_codes: "data/raw/mcc_codes.json"
+    fraud_labels: "data/raw/train_fraud_labels.json"
+  processed:
+    dir: "data/processed"
+    gold_table: "data/processed/gold_transactions.parquet"
+    train: "data/processed/train.parquet"
+    val: "data/processed/val.parquet"
+    test: "data/processed/test.parquet"
+
+outputs:
+  models: "outputs/models"
+  reports: "reports"
+  artifacts: "outputs/artifacts"

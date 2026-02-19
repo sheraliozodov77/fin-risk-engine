@@ -1,0 +1,75 @@
+# Model and pipeline configuration
+
+splits:
+  time_column: "date"
+  train_end: "2017-12-31"   # Train: date <= train_end (2010-2017, 8 years)
+  val_end: "2018-12-31"     # Val: train_end < date <= val_end (2018, 1 year)
+  test_start: "2019-01-01"  # Test/OOT: date >= test_start (2019, 10 months)
+
+target:
+  column: "is_fraud"
+  positive_class: 1
+
+# Behavioral feature windows (minutes)
+windows:
+  short_min: 10
+  hour_min: 60
+  day_min: 1440
+  week_min: 10080
+
+# Decision thresholds (calibrated probabilities)
+thresholds:
+  high: 0.7   # HIGH alert
+  medium: 0.3 # MEDIUM alert
+
+# CatBoost defaults (override in code or CLI)
+catboost:
+  iterations: 1000
+  learning_rate: 0.05
+  depth: 6
+  loss_function: "Logloss"
+  eval_metric: "PRAUC"
+  early_stopping_rounds: 50
+  verbose: 100
+
+# Feature selection
+feature_selection:
+  correlation_threshold: 0.95
+  max_vif: 10.0
+  min_permutation_importance: 0.0001
+
+# XGBoost defaults
+xgboost:
+  n_estimators: 1000
+  learning_rate: 0.05
+  max_depth: 6
+  early_stopping_rounds: 50
+  subsample: 0.8
+  colsample_bytree: 0.8
+
+# LightGBM defaults
+lightgbm:
+  n_estimators: 1000
+  learning_rate: 0.05
+  max_depth: 6
+  num_leaves: 63
+  subsample: 0.8
+  colsample_bytree: 0.8
+
+# Optuna tuning
+tuning:
+  n_trials: 50
+  default_model_type: "catboost"
+
+metrics:
+  primary: "PR-AUC"
+  secondary: ["ROC-AUC", "Recall@Precision", "Brier", "KS", "ECE"]
+
+# Serving (paths relative to outputs/models/)
+# champion_model controls which model the API loads at startup
+serving:
+  champion_model: "catboost"                        # catboost | xgboost
+  model_file: "catboost_fraud.cbm"                  # champion model binary
+  calibrator_file: "calibrator_catboost.joblib"     # champion calibrator
+  metadata_file: "feature_metadata_catboost.json"   # champion feature list
+  top_k_reason_codes: 5

@@ -1,0 +1,13 @@
+{
+  "model_type": "catboost",
+  "best_pr_auc": 0.8517057531180067,
+  "best_params": {
+    "iterations": 843,
+    "learning_rate": 0.048810371177035586,
+    "depth": 9,
+    "l2_leaf_reg": 8.134664303468504,
+    "border_count": 141,
+    "scale_pos_weight": 8.340745778105424
+  },
+  "n_trials": 20
+}

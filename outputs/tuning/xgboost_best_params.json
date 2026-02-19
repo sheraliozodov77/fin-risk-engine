@@ -1,0 +1,16 @@
+{
+  "model_type": "xgboost",
+  "best_pr_auc": 0.8471433526162692,
+  "best_params": {
+    "n_estimators": 895,
+    "learning_rate": 0.15440088894134185,
+    "max_depth": 8,
+    "reg_lambda": 6.408879599535447,
+    "subsample": 0.7064903940317779,
+    "colsample_bytree": 0.5633894489117262,
+    "scale_pos_weight": 15.852150593291185,
+    "min_child_weight": 14,
+    "gamma": 0.8294852518003862
+  },
+  "n_trials": 10
+}
