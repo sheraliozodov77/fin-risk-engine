@@ -213,6 +213,7 @@ _top_k = 5
 def get_app():
     """Build FastAPI app with lazy dependency injection; mount Gradio at /gradio."""
     from fastapi import FastAPI, HTTPException
+    from fastapi.responses import RedirectResponse
 
     app = FastAPI(title="Fraud Risk Scoring API", version="1.0")
 
@@ -226,17 +227,8 @@ def get_app():
 
     @app.get("/")
     def root():
-        """Root: links to docs and health. Use /health, /score, /score_batch for the API."""
-        return {
-            "service": "Fraud Risk Scoring API",
-            "docs": "/docs",
-            "health": "/health",
-            "model_info": "GET /model_info",
-            "sample_from_test": "GET /sample_from_test",
-            "gradio": "/gradio",
-            "score": "POST /score",
-            "score_batch": "POST /score_batch",
-        }
+        """Redirect root to the Gradio UI."""
+        return RedirectResponse(url="/gradio")
 
     @app.get("/health")
     def health():
@@ -468,24 +460,27 @@ def get_app():
                          edgecolor="white", linewidth=0.4, height=0.68)
                 ax2.axvline(0, color="#0f172a", linewidth=1.0)
 
-                ylabels = []
-                for nm, val in zip(names, values):
+                def _label(nm: str, val: str) -> str:
                     display = nm.replace("_", " ")
                     if val and str(val) not in ("(missing)", "None", "nan", "-999", ""):
-                        short = str(val)[:20]
-                        ylabels.append(f"{display}  [{short}]")
+                        short = str(val)[:14]
+                        s = f"{display}  [{short}]"
                     else:
-                        ylabels.append(display)
+                        s = display
+                    # Hard-truncate so labels never overflow the left margin
+                    return s if len(s) <= 30 else s[:28] + ".."
+
+                ylabels = [_label(nm, v) for nm, v in zip(names, values)]
 
                 ax2.set_yticks(y_pos)
                 ax2.set_yticklabels(ylabels, fontsize=8.5)
                 ax2.invert_yaxis()          # Most impactful at top
                 ax2.set_xlabel(
-                    "SHAP value  (positive  →  raises fraud risk     negative  →  lowers fraud risk)",
+                    "SHAP value  (positive → raises fraud risk     negative → lowers fraud risk)",
                     fontsize=8.5,
                 )
                 ax2.set_title(
-                    "Why this score?  --  Top feature contributions (SHAP)",
+                    "Why this score? -- Top feature contributions (SHAP)",
                     fontsize=10, fontweight="bold",
                 )
                 ax2.grid(axis="x", alpha=0.22, linestyle="--")
@@ -496,7 +491,8 @@ def get_app():
                          fontsize=10, color="#94a3b8")
                 ax2.axis("off")
 
-            fig.tight_layout()
+            # Use explicit margins so long y-axis labels are never clipped
+            fig.subplots_adjust(left=0.32, right=0.97, top=0.97, bottom=0.06, hspace=0.55)
             return fig
 
         # -- Helper: format result markdown -----------------------------------
