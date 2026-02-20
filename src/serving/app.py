@@ -316,8 +316,8 @@ def get_app():
 
         # -- Helper: champion model info for the header banner -----------------
         _PERF_STATS = {
-            "catboost": "PR-AUC **0.854** | ROC-AUC **0.999** | Recall@P90 **0.600** | Brier **0.000527**",
-            "xgboost":  "PR-AUC **0.847** | ROC-AUC **0.999** | Recall@P90 **0.643** | Brier **0.000555**",
+            "catboost": "PR-AUC **0.854** | ROC-AUC **0.999** | Brier **0.000527**",
+            "xgboost":  "PR-AUC **0.847** | ROC-AUC **0.999** | Brier **0.000555**",
         }
 
         def _get_champion_banner() -> str:
@@ -619,24 +619,15 @@ def get_app():
             # -- Champion banner + performance (below the scoring columns) -----
             champion_banner = gr.Markdown(value="⏳ Loading model info...")
 
-            with gr.Accordion(
-                "📊 Model performance on held-out test set (2020 -- never seen during training or tuning)",
-                open=False,
-            ):
-                gr.Markdown("""
-| Metric | CatBoost 🏆 Champion | XGBoost | Winner |
-|--------|:-------------------:|:-------:|:------:|
-| **PR-AUC** | **0.854** | 0.847 | CatBoost |
-| ROC-AUC | **0.999** | 0.999 | Tie |
-| Brier (calibrated) | **0.000527** | 0.000555 | CatBoost |
-| Recall @ 90% Precision | 0.600 | **0.643** | XGBoost |
-| KS Statistic | 0.977 | **0.979** | Tie |
-| F1 @ T_high (0.70) | 0.694 | **0.776** | XGBoost |
-| F1 @ T_med (0.30) | **0.797** | 0.789 | CatBoost |
-
-Zero val→test degradation confirms no overfitting across a 2-year temporal gap.
-Dataset: CaixaBank Tech 2024 AI Hackathon -- 13.3M transactions -- 0.15% fraud rate.
-""")
+            with gr.Accordion("📊 Model performance (test set 2020)", open=False):
+                gr.Markdown(
+                    "**CatBoost** (champion): PR-AUC **0.854**, ROC-AUC **0.999**, "
+                    "Recall@P90 **0.600**, Brier **0.000527**, F1@MED **0.797**\n\n"
+                    "**XGBoost**: PR-AUC **0.847**, ROC-AUC **0.999**, "
+                    "Recall@P90 **0.643**, Brier **0.000555**, F1@HIGH **0.776**\n\n"
+                    "Both trained on CaixaBank Tech 2024 AI Hackathon data "
+                    "(13.3M transactions, 0.15% fraud rate). No val-to-test degradation."
+                )
 
             # -- Footer --------------------------------------------------------
             gr.Markdown("""---
