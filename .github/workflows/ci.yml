@@ -1,9 +1,5 @@
 name: CI/CD
 
-# CI (lint + test + docker build) runs automatically on every push and PR.
-# Publishing the Docker image to ghcr.io NEVER happens automatically.
-# To deploy, go to Actions → "Deploy to registry" → Run workflow.
-
 on:
   push:
     branches: [main]
@@ -61,13 +57,17 @@ jobs:
           path: htmlcov/
           if-no-files-found: ignore
 
-  # ── Docker build (validation only — never pushes automatically) ───────────
-  # Validates the Dockerfile builds cleanly on every push and PR.
-  # No image is published here. Use the "Deploy to registry" workflow for that.
-  docker-build:
-    name: Docker build (validate)
+  # ── Docker build + push (CD) ───────────────────────────────────────────────
+  # Runs after lint + all test matrix jobs pass.
+  # PRs:        build only (validates Dockerfile)
+  # Push main:  build + push image to ghcr.io (tagged :latest and :<sha>)
+  docker:
+    name: Docker build & push
     runs-on: ubuntu-latest
     needs: [lint, test]
+    permissions:
+      contents: read
+      packages: write   # needed to push to ghcr.io
 
     steps:
       - uses: actions/checkout@v4
@@ -75,11 +75,24 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build image (no push)
+      - name: Log in to GitHub Container Registry
+        # Only authenticate on actual pushes to main (not PRs)
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
         uses: docker/build-push-action@v5
         with:
           context: .
-          push: false   # NEVER push here — deploy workflow requires manual approval
-          tags: fin-risk-engine:ci
+          # Push only on merges to main; PRs only build (validate Dockerfile)
+          push: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/fin-risk-engine:latest
+            ghcr.io/${{ github.repository_owner }}/fin-risk-engine:${{ github.sha }}
+          # GitHub Actions cache — dramatically speeds up repeated builds
           cache-from: type=gha
           cache-to: type=gha,mode=max
