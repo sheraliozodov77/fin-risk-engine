@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import pandas as pd
 
-from src.config import get_paths, get_model_config
+from src.config import get_paths
 from src.modeling.train import get_feature_columns
 from src.monitoring.drift import compute_drift
 from src.monitoring.performance import performance_by_period

@@ -4,7 +4,6 @@ Behavioral windows require time-ordered transactions and are implemented
 in the full pipeline (see notebooks/02_feature_engineering.ipynb).
 """
 import pandas as pd
-import re
 
 
 def _is_string_like_dtype(series: pd.Series) -> bool:

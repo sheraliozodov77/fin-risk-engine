@@ -10,7 +10,6 @@ from __future__ import annotations
 import gc
 
 import pandas as pd
-import numpy as np
 
 
 def add_merchant_fraud_rate(
