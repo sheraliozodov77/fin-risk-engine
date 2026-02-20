@@ -1,6 +1,13 @@
 """Basic tests for ingestion and config."""
 from pathlib import Path
 
+import pytest
+
+_RAW_DIR = Path(__file__).resolve().parents[1] / "data" / "raw"
+_requires_raw = pytest.mark.skipif(
+    not _RAW_DIR.exists(),
+    reason="data/raw/ not present (large files not committed to repo)",
+)
 
 
 def test_get_paths():
@@ -12,6 +19,7 @@ def test_get_paths():
     assert "transactions" in paths["data"]["raw"]
 
 
+@_requires_raw
 def test_load_cards():
     from src.ingestion import load_cards
     df = load_cards()
@@ -20,6 +28,7 @@ def test_load_cards():
     assert len(df) > 0
 
 
+@_requires_raw
 def test_load_users():
     from src.ingestion import load_users
     df = load_users()
@@ -27,6 +36,7 @@ def test_load_users():
     assert len(df) > 0
 
 
+@_requires_raw
 def test_load_mcc():
     from src.ingestion import load_mcc_codes
     mcc = load_mcc_codes()
@@ -34,6 +44,7 @@ def test_load_mcc():
     assert len(mcc) > 0
 
 
+@_requires_raw
 def test_load_transactions_small():
     from src.ingestion import load_transactions
     df = load_transactions(nrows=100)
