@@ -314,3 +314,22 @@ tests/
 - Per-model artifacts: `feature_metadata_catboost.json`, `calibrator_catboost.joblib`, `feature_metadata_xgboost.json`, `calibrator_xgboost.joblib` -- no shared copies
 - Champion model for serving is set in `config/model_config.yaml` under `serving.champion_model`
 - The `--behavioral-batch 400` flag processes behavioral features in entity batches to avoid memory issues                                                                                                                 
+
+
+ Full CI/CD pipeline
+
+  push / PR to main
+      ├── lint (ruff)     ~15s
+      ├── test (3.10)     ~45s  ─┐
+      └── test (3.11)     ~45s  ─┴─ both must pass
+                                      │
+                                docker job
+                                ├── PR:         build only (validates Dockerfile)
+                                └── push main:  build + push → ghcr.io/sheraliozodov77/fin-risk-engine:latest
+
+  Local usage (after make train-all && make evaluate):
+
+  make docker-build   # build image
+  make docker-up      # start API + MLflow UI
+  make docker-logs    # stream logs
+  make docker-down    # stop
