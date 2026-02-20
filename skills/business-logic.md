@@ -267,7 +267,7 @@ Transaction → Score → Calibrate → Threshold
 
 ---
 
-## Validated Production Readiness (WS1–WS2 Complete)
+## Validated Production Readiness (WS1–WS4 Complete)
 
 ### What's Been Proven
 
@@ -279,26 +279,28 @@ Transaction → Score → Calibrate → Threshold
 6. Time-based splits (no data leakage)
 7. Behavioral features validated by SHAP (top-5 in both models)
 8. Bayesian-smoothed historical fraud rates (prevents overfitting on rare entities)
-9. FastAPI + Gradio serving with interactive UI
+9. FastAPI + Gradio serving — interactive stakeholder UI, root `/` opens Gradio directly
 10. PSI drift monitoring + performance trending
-11. 48 tests across 7 test files
+11. 44 tests across 7 test files
+12. **MLflow model registry** — every training run tracked; @champion/@challenger aliases; app.py loads from registry at startup (WS3)
+13. **Champion-challenger framework** — promote_champion() called after each evaluation; challenger set automatically (WS3)
+14. **Docker + docker-compose** — single-image deployment, artifacts volume-mounted (WS4)
+15. **GitHub Actions CI/CD** — lint + test matrix (3.10/3.11) + docker build+push on every merge to main (WS4)
 
-### What's Missing for Bank Treasury Deployment (WS3–WS6)
+### What's Missing for Bank Treasury Deployment (WS5–WS6)
 
 #### Tier 1: Critical for Go-Live
-1. **MLflow model registry** — audit trail of every training run, model versioning, rollback (WS3)
-2. **Real-time feature store** — Redis for behavioral features without batch recompute (WS5)
-3. **API authentication** — OAuth2/API key for inter-service communication (WS6)
-4. **Audit trail** — every score logged with model version, features hash, reason codes (WS6)
-5. **Containerization** — Docker + docker-compose for reproducible deployment (WS4)
+1. **Real-time feature store** — Redis for behavioral features without batch recompute (WS5)
+2. **API authentication** — OAuth2/API key for inter-service communication (WS6)
+3. **Audit trail** — every score logged with model version, features hash, reason codes (WS6)
 
 #### Tier 2: Regulatory
-6. **SR 11-7 model governance** — independent validation, stress testing, bias testing
-7. **Champion-challenger framework** — A/B test new models against production (WS3)
-8. **Regulatory reporting** — automated model performance reports
+4. **SR 11-7 model governance** — independent validation, stress testing, bias testing
+5. **Regulatory reporting** — automated model performance reports
+6. **W&B experiment tracking** — sweep visualisation alongside MLflow (WS3 remainder)
 
 #### Tier 3: Operational
-9. **Kafka streaming** — real-time transaction ingestion (WS5)
-10. **Prometheus + Grafana** — observability stack (WS6)
-11. **Automated drift alerting** — PSI thresholds trigger PagerDuty/Slack (WS6)
-12. **CI/CD pipeline** — automated test → train → deploy on push (WS4)
+7. **Kafka streaming** — real-time transaction ingestion (WS5)
+8. **Prometheus + Grafana** — observability stack (WS6)
+9. **Automated drift alerting** — PSI thresholds trigger PagerDuty/Slack (WS6)
+10. **AWS deployment** — ECR + ECS Fargate + ALB + S3 (WS4 remainder)

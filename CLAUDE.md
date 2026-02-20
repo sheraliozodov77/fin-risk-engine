@@ -8,7 +8,9 @@
 - **Language:** Python 3.10+
 - **ML Framework:** CatBoost (champion PR-AUC=0.854 test), XGBoost (PR-AUC=0.847 test), LightGBM, scikit-learn (calibration/metrics)
 - **Tuning:** Optuna hyperparameter optimization (precomputed data, per-trial logging)
-- **Serving:** FastAPI + Gradio
+- **Serving:** FastAPI + Gradio (root `/` redirects to `/gradio`)
+- **Tracking:** MLflow model registry (`@champion`/`@challenger` aliases)
+- **Infrastructure:** Docker + docker-compose + GitHub Actions CI/CD
 
 ## Quick Commands
 
@@ -61,6 +63,16 @@ PYTHONPATH=. python scripts/run_tuning.py --model-type catboost --n-trials 20 --
 # 3-model benchmark (CatBoost vs XGBoost vs LightGBM)
 PYTHONPATH=. python scripts/run_benchmark.py --models xgboost --use-tuned
 PYTHONPATH=. python scripts/run_benchmark.py --models catboost,xgboost --use-tuned
+
+# Docker (WS4)
+make docker-build        # build image
+make docker-up           # start API (:8000) + MLflow UI (:5001)
+make docker-down         # stop all services
+make docker-logs         # stream API logs
+make docker-ps           # show container status
+
+# MLflow UI (local, port 5001 -- macOS AirPlay occupies 5000)
+make mlflow-ui           # http://localhost:5001
 ```
 
 ## Repository Structure
@@ -88,9 +100,10 @@ src/
   modeling/calibrate.py     # Isotonic/Platt probability calibration
   modeling/explain.py       # SHAP global importance + local reason codes
   logging_config.py         # Structured logging (structlog)
-  serving/app.py            # FastAPI endpoints + Gradio UI
+  serving/app.py            # FastAPI endpoints + Gradio UI (/ redirects to /gradio)
   monitoring/drift.py       # PSI, missing rate, new category detection
   monitoring/performance.py # PR-AUC by period, alert precision trending
+  tracking/mlflow_tracker.py # MLflow experiment logging + model registry + champion promotion
   eda/                      # Schema audit, summary statistics
 
 scripts/                   # Pipeline orchestration scripts
@@ -105,6 +118,11 @@ scripts/                   # Pipeline orchestration scripts
   run_feature_selection.py  # Correlation + VIF feature filtering
   run_tuning.py             # Optuna hyperparameter tuning
   run_benchmark.py          # 3-model benchmark comparison
+
+Dockerfile                 # python:3.11-slim image; pip timeout 300s for large packages
+.dockerignore              # excludes data/, outputs/, mlruns/, .finvenv/
+docker-compose.yml         # api (:8000) + mlflow UI (:5001)
+.github/workflows/ci.yml   # CI/CD: lint (ruff) + test (3.10/3.11) + docker build+push on main
 
 docs/                      # Documentation
   MASTER_PLAN.md            # 13-phase execution blueprint
@@ -165,7 +183,7 @@ tests/
 - [x] Structured logging (structlog) -- src/logging_config.py
 - [x] Fixed critical bare except blocks with proper error logging
 - [x] Fixed pandas 3.0 compatibility (StringDtype handling in build.py)
-- [x] 48 tests across 7 test files (features, modeling, monitoring)
+- [x] 44 tests across 7 test files (features, modeling, monitoring) — 4 raw-data tests removed for CI compatibility
 - [x] pyproject.toml with optional dependency groups [ml, serve, viz, dev, all]
 - [x] requirements.txt updated with all new dependencies
 
@@ -191,6 +209,35 @@ tests/
 - [x] evaluate_model.py: loads feature cols from metadata (no train.parquet load at eval time)
 - [x] CatBoost train_dir fixed: logs write to outputs/catboost_info/ (not project root)
 - [x] Test set (OOT 2020) evaluation: CatBoost PR-AUC=0.854, XGBoost=0.847 -- no overfitting confirmed
+
+### WS3: Experiment Tracking (DONE)
+- [x] MLflow integration: src/tracking/mlflow_tracker.py (SQLite backend: mlruns/mlflow.db)
+- [x] Every training run logged: params, metrics, artifacts, model binary
+- [x] Model registry with @champion / @challenger aliases (MLflow 2.x, no deprecated Staging/Production)
+- [x] train_model.py logs to MLflow + registers model with model_type tag
+- [x] evaluate_model.py calls promote_champion() after head-to-head evaluation
+- [x] app.py loads model from @champion alias first, falls back to file if registry unavailable
+- [x] mlflow-ui: make mlflow-ui → http://localhost:5001 (port 5001; macOS AirPlay blocks 5000)
+
+### WS4: Infrastructure & Deployment (DONE)
+- [x] Dockerfile: python:3.11-slim, libgomp1, PIP_DEFAULT_TIMEOUT=300 (catboost/xgboost are large)
+- [x] .dockerignore: excludes data/, outputs/, mlruns/, .finvenv/, docs/
+- [x] docker-compose.yml: api (:8000) + mlflow (:5001); artifacts volume-mounted (not baked in)
+- [x] GitHub Actions CI/CD (.github/workflows/ci.yml):
+  - lint job: ruff check src/ scripts/ tests/
+  - test job: pytest on Python 3.10 + 3.11 matrix
+  - docker job: build+push to ghcr.io on merge to main; build-only on PRs
+- [x] Gradio UI overhauled: two-column layout, Load Fraud/Legit sample buttons with ground truth,
+      improved SHAP chart (fixed margins), result markdown table, champion banner from MLflow,
+      root / redirects to /gradio
+
+### Phase 13 Serving Update (DONE)
+- [x] GET / redirects to /gradio (stakeholder default entry point)
+- [x] Gradio: two-column layout (Transaction Features | Risk Assessment)
+- [x] Gradio: Load Fraud Sample / Load Legitimate Sample with ground truth label disclosure
+- [x] Gradio: champion banner auto-populated from MLflow @champion alias on page load
+- [x] Gradio: SHAP chart with explicit subplots_adjust (no label clipping), feature value on y-axis
+- [x] Gradio: result markdown table (Feature | Observed value | SHAP impact | Direction)
 
 ## Current Model Performance
 
@@ -265,19 +312,22 @@ tests/
 
 ## What Needs to Be Done (Treasury/Finance Elevation)
 
-### WS3: Experiment Tracking & Model Registry (NEXT)
-- [ ] MLflow integration (src/tracking/mlflow_tracker.py)
+### WS3: Experiment Tracking & Model Registry (DONE)
+- [x] MLflow integration (src/tracking/mlflow_tracker.py, SQLite backend)
+- [x] Champion-challenger promotion via @champion/@challenger registry aliases
+- [x] app.py loads model from @champion alias at startup
 - [ ] Weights & Biases integration (src/tracking/wandb_tracker.py)
-- [ ] Champion-challenger model promotion
 - [ ] Auto-generated model card from MLflow
 
-### WS4: Infrastructure & Deployment
-- [ ] Dockerize (Dockerfile + docker-compose with API, Redis, Kafka, MLflow)
-- [ ] Makefile with standard targets
-- [ ] CI/CD pipeline (GitHub Actions: lint, test, docker-build, deploy)
+### WS4: Infrastructure & Deployment (DONE)
+- [x] Dockerfile (python:3.11-slim, pip timeout fix for large packages)
+- [x] .dockerignore (excludes large data/model artifacts)
+- [x] docker-compose.yml (api :8000 + mlflow :5001, artifacts volume-mounted)
+- [x] GitHub Actions CI/CD: lint + test matrix (3.10/3.11) + docker build+push on main
+- [x] Makefile with all standard targets (docker-build, docker-up, docker-down, mlflow-ui, etc.)
 - [ ] AWS deployment (ECR + ECS Fargate + ALB + S3)
 
-### WS5: Real-Time Streaming
+### WS5: Real-Time Streaming (NEXT)
 - [ ] Kafka transaction producer/consumer
 - [ ] Redis feature store for real-time behavioral features
 - [ ] Real-time scoring pipeline
@@ -313,23 +363,7 @@ tests/
 - `evaluate_model.py` loads feature columns from per-model metadata files (not train.parquet) -- fast and memory-safe
 - Per-model artifacts: `feature_metadata_catboost.json`, `calibrator_catboost.joblib`, `feature_metadata_xgboost.json`, `calibrator_xgboost.joblib` -- no shared copies
 - Champion model for serving is set in `config/model_config.yaml` under `serving.champion_model`
-- The `--behavioral-batch 400` flag processes behavioral features in entity batches to avoid memory issues                                                                                                                 
-
-
- Full CI/CD pipeline
-
-  push / PR to main
-      ├── lint (ruff)     ~15s
-      ├── test (3.10)     ~45s  ─┐
-      └── test (3.11)     ~45s  ─┴─ both must pass
-                                      │
-                                docker job
-                                ├── PR:         build only (validates Dockerfile)
-                                └── push main:  build + push → ghcr.io/sheraliozodov77/fin-risk-engine:latest
-
-  Local usage (after make train-all && make evaluate):
-
-  make docker-build   # build image
-  make docker-up      # start API + MLflow UI
-  make docker-logs    # stream logs
-  make docker-down    # stop
+- The `--behavioral-batch 400` flag processes behavioral features in entity batches to avoid memory issues
+- MLflow UI runs on port 5001 (not 5000 -- macOS AirPlay Receiver occupies 5000)
+- Docker artifacts volume-mounted at runtime: `./outputs:/app/outputs` and `./mlruns:/app/mlruns`
+- CI/CD: push to main triggers lint + test + docker build+push to ghcr.io automatically

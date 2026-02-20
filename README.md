@@ -46,7 +46,9 @@ Zero val→test degradation confirms no overfitting across a 2-year temporal gap
 - **Isotonic calibration** — probabilities are reliable for threshold-based routing
 - **SHAP explainability** — global feature importance + per-transaction reason codes on every alert
 - **Drift monitoring** — PSI for numeric/categorical features, performance drift by time period
-- **FastAPI + Gradio** — REST API with interactive demo UI
+- **MLflow model registry** — every run tracked; `@champion`/`@challenger` aliases; serving API loads from registry automatically
+- **FastAPI + Gradio** — REST API + interactive stakeholder demo UI (opens at `/` by default)
+- **Docker + CI/CD** — single-image deployment; GitHub Actions lint + test + push to ghcr.io on every merge
 
 ---
 
@@ -169,10 +171,14 @@ make train          # CatBoost with tuned params
 make train-xgboost  # XGBoost with tuned params
 make evaluate       # head-to-head comparison on val set
 make evaluate-test  # final evaluation on held-out test set
-make serve          # launch API + Gradio UI
-make test           # run all tests
+make serve          # launch API + Gradio UI  →  http://localhost:8000
+make test           # run all tests (44 passing)
 make tune           # re-run Optuna tuning (CatBoost)
 make monitor        # drift + performance report
+make mlflow-ui      # MLflow experiment browser  →  http://localhost:5001
+make docker-build   # build Docker image
+make docker-up      # start API (:8000) + MLflow (:5001) via docker-compose
+make docker-down    # stop all containers
 ```
 
 ---

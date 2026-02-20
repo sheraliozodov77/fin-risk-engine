@@ -100,8 +100,7 @@ Three sub-modules, all leakage-safe (past-only at time t):
   - `fit_calibrator()` — isotonic (default) or Platt scaling
   - `apply_calibrator()` — transform raw proba to calibrated
   - `brier_score()` — calibration quality metric
-  - Per-model calibrators: `calibrator_catboost.joblib`, `calibrator_xgboost.joblib`
-  - `calibrator.joblib` = champion calibrator copy (used by serving API)
+  - Per-model calibrators: `calibrator_catboost.joblib`, `calibrator_xgboost.joblib` (no shared copy)
 
 - **`explain.py`** (SHAP explainability):
   - `get_global_importance()` — mean |SHAP| across sample; CatBoost uses `ShapValues` via Pool
@@ -114,15 +113,26 @@ Three sub-modules, all leakage-safe (past-only at time t):
   - `lift_chart_data(y, proba, n_bins=10)` — decile lift
   - `expected_calibration_error(y, proba, n_bins=10)` — ECE
 
-### 5. Serving Layer (`src/serving/`)
+### 5. Tracking Layer (`src/tracking/`)
+
+- **`mlflow_tracker.py`** — MLflow experiment tracking + model registry:
+  - `MLflowTracker(experiment_name, tracking_uri)` — initialises client and experiment
+  - `start_run()` / `end_run()` — context manager for a single training run
+  - `log_params()`, `log_metrics()`, `log_artifact()` — structured run logging
+  - `register_model(model_uri, name, tags)` — register to model registry with `model_type` tag
+  - `promote_champion(registry_name, model_type)` — sets `@champion` alias on best model, `@challenger` on runner-up; called by evaluate_model.py after head-to-head
+  - `get_champion_info(registry_name)` — returns `{model_type, version, run_id}` for `@champion` alias
+
+### 6. Serving Layer (`src/serving/`)
 
 - **`app.py`** — FastAPI + Gradio:
-  - **Startup:** `load_artifacts()` loads model (.cbm), `calibrator.joblib` (champion), `feature_metadata.json`, thresholds
+  - **`GET /`:** redirects to `/gradio` (stakeholder default entry point)
+  - **Startup:** `load_artifacts()` — (1) queries MLflow `@champion` alias for model type + loads from registry; (2) falls back to `outputs/models/` files if registry unavailable; (3) always loads calibrator + feature metadata from per-model files
   - **Endpoints:** `GET /health`, `GET /model_info`, `GET /sample_from_test`, `POST /score`, `POST /score_batch`
-  - **Gradio UI at `/gradio`:** interactive scoring, risk gauge chart, SHAP bar chart, load sample button
+  - **Gradio UI at `/gradio`:** two-column layout (Transaction Features | Risk Assessment); champion banner auto-loaded from MLflow; Load Fraud/Legit sample buttons with ground truth disclosure; SHAP chart with explicit subplots_adjust (no label clipping); result markdown table
   - **Scoring pipeline:** features dict → DataFrame → predict_proba → calibrate → threshold → SHAP reason codes
 
-### 6. Monitoring Layer (`src/monitoring/`)
+### 7. Monitoring Layer (`src/monitoring/`)
 
 - **`drift.py`** — PSI numeric/categorical, missing rate, new category share, `compute_drift()` orchestrator
 - **`performance.py`** — `performance_by_period()`: PR-AUC + alert precision by month/quarter/week
@@ -194,10 +204,8 @@ Raw CSV/JSON (5 files)
 | `outputs/models/xgboost_fraud.json` | XGBoost | Runner-up model |
 | `outputs/models/calibrator_catboost.joblib` | Joblib | CatBoost isotonic calibrator |
 | `outputs/models/calibrator_xgboost.joblib` | Joblib | XGBoost isotonic calibrator |
-| `outputs/models/calibrator.joblib` | Joblib | Champion calibrator copy (for serving API) |
-| `outputs/models/feature_metadata_catboost.json` | JSON | CatBoost feature cols + cat cols (stable) |
+| `outputs/models/feature_metadata_catboost.json` | JSON | CatBoost feature cols + cat cols (stable, never overwritten by other model) |
 | `outputs/models/feature_metadata_xgboost.json` | JSON | XGBoost feature cols + cat cols (stable) |
-| `outputs/models/feature_metadata.json` | JSON | Last-trained model metadata (backward compat) |
 | `outputs/models/xgboost_target_encoders.joblib` | Joblib | XGBoost Bayesian target encoders |
 | `outputs/tuning/catboost_best_params.json` | JSON | CatBoost Optuna best params (PR-AUC=0.852) |
 | `outputs/tuning/xgboost_best_params.json` | JSON | XGBoost Optuna best params (PR-AUC=0.847) |
@@ -230,11 +238,27 @@ Raw CSV/JSON (5 files)
 
 ---
 
-## What's Next (WS3–WS6)
+## Infrastructure (WS4 — Complete)
+
+| Component | Details |
+|-----------|---------|
+| `Dockerfile` | `python:3.11-slim`, libgomp1, `PIP_DEFAULT_TIMEOUT=300` (catboost ~97 MB, xgboost ~140 MB) |
+| `.dockerignore` | Excludes `data/`, `outputs/`, `mlruns/`, `.finvenv/`, `docs/` |
+| `docker-compose.yml` | `api` service (:8000) + `mlflow` service (:5001); artifacts volume-mounted |
+| `.github/workflows/ci.yml` | lint (ruff) → test matrix (3.10/3.11) → docker build+push to ghcr.io on main |
+
+```bash
+make docker-build    # build image
+make docker-up       # start api (:8000) + mlflow (:5001)
+make docker-logs     # stream API container logs
+make docker-down     # stop all
+make mlflow-ui       # local MLflow UI at :5001 (macOS AirPlay blocks :5000)
+```
+
+## What's Next (WS5–WS6)
 
 | Work Stream | Priority | Key Components |
 |-------------|----------|----------------|
-| **WS3: Experiment Tracking** | Next | MLflow model registry, W&B sweep, champion-challenger promotion |
-| **WS4: Infrastructure** | Parallel with WS3 | Docker, CI/CD (GitHub Actions), AWS ECS/ECR |
-| **WS5: Streaming** | After WS4 | Kafka producer/consumer, Redis feature store |
-| **WS6: Observability** | After WS4 | Prometheus /metrics, drift alerting, audit trail, API auth |
+| **WS5: Streaming** | Next | Kafka producer/consumer, Redis feature store |
+| **WS6: Observability** | After WS5 | Prometheus /metrics, drift alerting, audit trail, API auth |
+| **WS4 remainder** | Low | AWS ECS/ECR deployment |
