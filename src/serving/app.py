@@ -306,8 +306,6 @@ def get_app():
 
     # -- Gradio UI -------------------------------------------------------------
     try:
-        import math
-
         import gradio as gr
         import matplotlib
         matplotlib.use("Agg")
