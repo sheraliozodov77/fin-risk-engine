@@ -131,8 +131,8 @@ monitor-test:  ## Run monitoring with test set as current period
 # MLflow (WS3)
 # =============================================================================
 
-mlflow-ui:  ## Open MLflow experiment browser at localhost:5000
-	mlflow ui --backend-store-uri sqlite:///mlruns/mlflow.db --port 5000
+mlflow-ui:  ## Open MLflow experiment browser at localhost:5001 (5000 blocked by macOS AirPlay)
+	mlflow ui --backend-store-uri sqlite:///mlruns/mlflow.db --port 5001
 
 mlflow-clean:  ## Remove all MLflow runs (keeps model registry)
 	rm -rf mlruns/

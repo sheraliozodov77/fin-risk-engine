@@ -3,7 +3,7 @@
 #
 # Services:
 #   api     — FastAPI + Gradio scoring API   → http://localhost:8000
-#   mlflow  — MLflow experiment browser      → http://localhost:5000
+#   mlflow  — MLflow experiment browser      → http://localhost:5001  (5000 reserved by macOS AirPlay)
 #
 # Usage:
 #   docker compose up -d          # start all services
@@ -44,9 +44,9 @@ services:
       mlflow ui
       --backend-store-uri sqlite:///mlruns/mlflow.db
       --host 0.0.0.0
-      --port 5000
+      --port 5001
     ports:
-      - "5000:5000"
+      - "5001:5001"
     volumes:
       - ./mlruns:/app/mlruns
     restart: unless-stopped
