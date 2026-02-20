@@ -1,0 +1,55 @@
+# =============================================================================
+# .dockerignore — keep build context small and fast
+# =============================================================================
+
+# Virtual environments
+.finvenv/
+.venv/
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# Testing
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+tests/
+
+# Git / CI / IDE
+.git/
+.github/
+.vscode/
+.idea/
+.DS_Store
+
+# Large data files — never baked into the image (use volume mounts or S3)
+data/raw/
+data/processed/
+
+# Generated model artifacts — volume-mounted at runtime, not baked in
+outputs/models/
+outputs/artifacts/
+outputs/catboost_info/
+outputs/benchmark/
+
+# MLflow tracking DB — volume-mounted at runtime
+mlruns/
+
+# Dev / docs
+.env
+.env.*
+.claude/
+docs/
+skills/
+
+# Markdown files (README.md is explicitly re-included by COPY)
+*.md
+!README.md

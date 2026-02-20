@@ -145,7 +145,7 @@ mlflow-clean:  ## Remove all MLflow runs (keeps model registry)
 docker-build:  ## Build Docker serving image
 	docker build -t fin-risk-engine:latest .
 
-docker-up:  ## Start full stack (API + Redis + Kafka + MLflow)
+docker-up:  ## Start API + MLflow UI (http://localhost:8000 + :5000)
 	docker compose up -d
 
 docker-down:  ## Stop all services
@@ -153,6 +153,9 @@ docker-down:  ## Stop all services
 
 docker-logs:  ## Stream API container logs
 	docker compose logs -f api
+
+docker-ps:  ## Show running container status
+	docker compose ps
 
 # =============================================================================
 # Clean

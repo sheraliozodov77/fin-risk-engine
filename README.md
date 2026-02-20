@@ -6,7 +6,8 @@
 ![CatBoost](https://img.shields.io/badge/CatBoost-champion-brightgreen)
 ![XGBoost](https://img.shields.io/badge/XGBoost-challenger-orange)
 ![PR--AUC](https://img.shields.io/badge/PR--AUC-0.854-success)
-![Tests](https://img.shields.io/badge/tests-48%20passing-success)
+[![CI/CD](https://github.com/sheraliozodov77/fin-risk-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/sheraliozodov77/fin-risk-engine/actions/workflows/ci.yml)
+![Tests](https://img.shields.io/badge/tests-44%20passing-success)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
 
 ---
