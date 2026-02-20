@@ -18,6 +18,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Dependency layer (cached unless pyproject.toml changes) ──────────────────
+# Longer timeout + retries for large packages (catboost ~97 MB, xgboost ~140 MB).
+ENV PIP_DEFAULT_TIMEOUT=300 \
+    PIP_RETRIES=5
+
 # Copy only the package manifest first so the heavy pip install is cached
 # independently of source code changes.
 COPY pyproject.toml README.md ./
