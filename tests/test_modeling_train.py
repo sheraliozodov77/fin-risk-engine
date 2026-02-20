@@ -1,9 +1,8 @@
 """Tests for src/modeling/train.py -- feature column detection and evaluate_val."""
 import pandas as pd
 import numpy as np
-import pytest
 
-from src.modeling.train import get_feature_columns, EXCLUDE_FEATURES, evaluate_val
+from src.modeling.train import get_feature_columns, evaluate_val
 
 
 class TestGetFeatureColumns:

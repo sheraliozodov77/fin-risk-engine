@@ -1,7 +1,6 @@
 """Tests for src/monitoring/drift.py -- PSI, missing rates, new categories."""
 import pandas as pd
 import numpy as np
-import pytest
 
 from src.monitoring.drift import (
     psi_numeric,

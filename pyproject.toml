@@ -35,12 +35,16 @@ viz = [
     "matplotlib>=3.7",
     "seaborn>=0.12",
 ]
+tracking = [
+    "mlflow>=2.10",
+]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
+    "ruff>=0.4",
 ]
 all = [
-    "fin-risk-engine[ml,serve,viz,dev]",
+    "fin-risk-engine[ml,serve,viz,tracking,dev]",
 ]
 
 [tool.setuptools.packages.find]

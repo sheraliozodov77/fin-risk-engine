@@ -111,8 +111,8 @@ def main():
 
     if not args.skip_behavioral:
         print(f"\n*** BEHAVIORAL MODE: outputs will be saved to {out_dir} ***")
-        print(f"*** Your existing data/processed/ splits are SAFE and unchanged ***")
-        print(f"*** After success, run with --promote to move to data/processed/ ***\n")
+        print("*** Your existing data/processed/ splits are SAFE and unchanged ***")
+        print("*** After success, run with --promote to move to data/processed/ ***\n")
 
     t0 = time.time()
     print("Phase 6 + gold: building gold table with static preprocessing...")
@@ -185,15 +185,15 @@ def main():
 
     if not args.skip_behavioral:
         print(f"\n{'='*60}")
-        print(f"  SUCCESS: Behavioral features built!")
+        print("  SUCCESS: Behavioral features built!")
         print(f"  Output: {out_dir}")
-        print(f"  Your existing data/processed/ splits are UNCHANGED.")
-        print(f"")
-        print(f"  To use these for training, run:")
-        print(f"    PYTHONPATH=. python scripts/build_features_and_splits.py --promote")
-        print(f"  Then retune and retrain:")
-        print(f"    PYTHONPATH=. python scripts/run_tuning.py --model-type catboost --n-trials 20")
-        print(f"    PYTHONPATH=. python scripts/train_model.py --model-type catboost --use-tuned")
+        print("  Your existing data/processed/ splits are UNCHANGED.")
+        print("")
+        print("  To use these for training, run:")
+        print("    PYTHONPATH=. python scripts/build_features_and_splits.py --promote")
+        print("  Then retune and retrain:")
+        print("    PYTHONPATH=. python scripts/run_tuning.py --model-type catboost --n-trials 20")
+        print("    PYTHONPATH=. python scripts/train_model.py --model-type catboost --use-tuned")
         print(f"{'='*60}")
     else:
         print("Done. Ready for modeling.")

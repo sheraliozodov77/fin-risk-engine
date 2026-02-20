@@ -2,7 +2,6 @@
 Train CatBoost fraud classifier.
 Uses time-based splits; expects train/val with is_fraud and has_label.
 """
-from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -129,6 +128,10 @@ def train_catboost(
         l2_leaf_reg=cfg.get("l2_leaf_reg", 3.0),
         border_count=cfg.get("border_count", 254),
         loss_function=cfg.get("loss_function", "Logloss"),
+        # PRAUC for early stopping: aligns with our primary metric and correctly
+        # identifies the PR-AUC peak (~iter 47 with tuned params). CatBoost's
+        # PRAUC formula differs from sklearn's in absolute value but agrees on
+        # which iteration is best. Logloss overshoots and degrades PR-AUC.
         eval_metric=cfg.get("eval_metric", "PRAUC"),
         early_stopping_rounds=cfg.get("early_stopping_rounds", 50),
         verbose=cfg.get("verbose", 100),
@@ -177,7 +180,6 @@ def evaluate_val(
     y = val_df[target_col].astype(int)
 
     try:
-        import numpy as np
         from sklearn.metrics import (
             average_precision_score,
             brier_score_loss,

@@ -37,6 +37,9 @@ fastapi>=0.104
 uvicorn>=0.24
 gradio>=4.0
 
+# Experiment tracking (WS3)
+mlflow>=2.10
+
 # Testing
 pytest>=7.0
 pytest-cov>=4.0

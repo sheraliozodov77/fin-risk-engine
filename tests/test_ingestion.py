@@ -1,7 +1,6 @@
 """Basic tests for ingestion and config."""
 from pathlib import Path
 
-import pytest
 
 
 def test_get_paths():
@@ -15,7 +14,6 @@ def test_get_paths():
 
 def test_load_cards():
     from src.ingestion import load_cards
-    base = Path(__file__).resolve().parents[1]
     df = load_cards()
     assert "id" in df.columns
     assert "client_id" in df.columns

@@ -1,7 +1,6 @@
 """Tests for src/features/build.py -- parsing, time features, static prep."""
 import pandas as pd
 import numpy as np
-import pytest
 
 from src.features.build import (
     parse_currency,

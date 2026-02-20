@@ -28,6 +28,9 @@ catboost:
   learning_rate: 0.05
   depth: 6
   loss_function: "Logloss"
+  # PRAUC for early stopping: correctly identifies the PR-AUC peak and prevents
+  # overfitting. Logloss causes the model to overshoot — trains longer but
+  # PR-AUC degrades (0.852 → 0.837). Tuned params were optimized with PRAUC.
   eval_metric: "PRAUC"
   early_stopping_rounds: 50
   verbose: 100
@@ -64,6 +67,14 @@ tuning:
 metrics:
   primary: "PR-AUC"
   secondary: ["ROC-AUC", "Recall@Precision", "Brier", "KS", "ECE"]
+
+# MLflow experiment tracking (WS3)
+# tracking_uri: "mlruns" = local file-based (no server needed)
+# Run `mlflow ui` or `make mlflow-ui` to open the experiment browser at localhost:5000
+mlflow:
+  tracking_uri: "sqlite:///mlruns/mlflow.db"   # SQLite backend (recommended; avoids filesystem deprecation warning)
+  experiment_name: "fin-risk-engine"
+  registry_model_name: "fraud-detection"
 
 # Serving (paths relative to outputs/models/)
 # champion_model controls which model the API loads at startup

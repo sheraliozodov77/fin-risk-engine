@@ -29,6 +29,7 @@ import pyarrow.parquet as pq
 from src.config import get_paths, get_model_config
 from src.logging_config import setup_logging, get_logger
 from src.modeling.train import get_feature_columns, evaluate_val
+from src.tracking.mlflow_tracker import MLflowTracker
 
 logger = get_logger(__name__)
 
@@ -256,16 +257,71 @@ def main():
         out_dir = Path(__file__).resolve().parents[1] / out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Train
-    encoders = None
-    if args.model_type == "xgboost":
-        model, encoders = _train_xgboost(train, val, feature_cols, cat_cols, params, out_dir)
-    else:
-        model = _train_catboost(train, val, feature_cols, cat_cols, params, out_dir)
+    # MLflow setup
+    cfg = get_model_config()
+    mlflow_cfg = cfg.get("mlflow", {})
+    tracker = MLflowTracker(
+        experiment_name=mlflow_cfg.get("experiment_name", "fin-risk-engine"),
+        tracking_uri=mlflow_cfg.get("tracking_uri", "mlruns"),
+    )
 
-    # Evaluate
-    if val is not None:
-        _evaluate(model, val, feature_cols, cat_cols, args.model_type, encoders)
+    with tracker.start_run(
+        run_name=f"{args.model_type}-train",
+        tags={"model_type": args.model_type, "stage": "training"},
+    ):
+        # Log training parameters
+        run_params: dict = {
+            "model_type": args.model_type,
+            "use_tuned": args.use_tuned,
+            "subsample_train": args.subsample_train or "full",
+            "n_features": len(feature_cols),
+            "n_cat_features": len(cat_cols),
+        }
+        if params:
+            run_params.update({f"hp_{k}": v for k, v in params.items()})
+        tracker.log_params(run_params)
+
+        # Train
+        encoders = None
+        if args.model_type == "xgboost":
+            model, encoders = _train_xgboost(train, val, feature_cols, cat_cols, params, out_dir)
+        else:
+            model = _train_catboost(train, val, feature_cols, cat_cols, params, out_dir)
+
+        # Evaluate and log metrics
+        metrics = {}
+        if val is not None:
+            metrics = _evaluate(model, val, feature_cols, cat_cols, args.model_type, encoders)
+            tracker.log_metrics({
+                "val_pr_auc": metrics.get("pr_auc", float("nan")),
+                "val_roc_auc": metrics.get("roc_auc", float("nan")),
+                "val_brier": metrics.get("brier", float("nan")),
+                "val_recall_at_p90": metrics.get("recall_at_precision_90", float("nan")),
+            })
+
+        # Log model to MLflow (enables model registry)
+        registry_name = mlflow_cfg.get("registry_model_name", "fraud-detection")
+        if args.model_type == "catboost":
+            model_uri = tracker.log_model(
+                model,
+                artifact_path="catboost_model",
+                model_type="catboost",
+                extra_artifacts=[out_dir / "feature_metadata_catboost.json"],
+            )
+        else:
+            model_uri = tracker.log_model(
+                model,
+                artifact_path="xgboost_model",
+                model_type="xgboost",
+                extra_artifacts=[
+                    out_dir / "xgboost_target_encoders.joblib",
+                    out_dir / "feature_metadata_xgboost.json",
+                ],
+            )
+
+        # Register in model registry; tag with model_type so promote_champion() can identify versions
+        if model_uri:
+            tracker.register_model(model_uri, name=registry_name, tags={"model_type": args.model_type})
 
     print(f"\nArtifacts saved to: {out_dir}/")
     print("Done.")

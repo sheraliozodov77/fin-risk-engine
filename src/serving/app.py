@@ -31,28 +31,25 @@ def _project_root() -> Path:
 
 
 def _get_models_dir() -> Path:
-    from src.config import get_paths, get_model_config
+    from src.config import get_paths
     paths = get_paths()
     models_dir = paths.get("outputs", {}).get("models", "outputs/models")
-    cfg = get_model_config()
-    serving = cfg.get("serving", {})
-    model_file = serving.get("model_file", "catboost_fraud.cbm")
     base = Path(models_dir) if Path(models_dir).is_absolute() else _project_root() / models_dir
     return base
 
 
 def load_artifacts() -> tuple[Any, Any, list[str], list[str], float, float, int]:
     """
-    Load model, calibrator, feature_cols, cat_cols, T_high, T_med, top_k from config.
-    Falls back to train.parquet for feature list if metadata missing.
+    Load champion model, calibrator, feature_cols, cat_cols, T_high, T_med, top_k.
+
+    Model loading order:
+    1. MLflow registry @champion alias (source of truth for champion model type)
+    2. File fallback (outputs/models/) if registry unavailable or alias not set
+
+    Calibrator and feature metadata always loaded from files (not in MLflow yet — WS4).
     Returns (model, calibrator, feature_cols, cat_cols, t_high, t_med, top_k).
     """
     import joblib
-    try:
-        from catboost import CatBoostClassifier
-    except ImportError:
-        raise RuntimeError("catboost not installed")
-
     root = _project_root()
     models_dir = _get_models_dir()
     from src.config import get_paths, get_model_config
@@ -60,25 +57,74 @@ def load_artifacts() -> tuple[Any, Any, list[str], list[str], float, float, int]
     cfg = get_model_config()
     serving = cfg.get("serving", {})
     processed = paths.get("data", {}).get("processed", {})
-
-    model_path = models_dir / serving.get("model_file", "catboost_fraud.cbm")
-    calibrator_path = models_dir / serving.get("calibrator_file", "calibrator.joblib")
-    meta_path = models_dir / serving.get("metadata_file", "feature_metadata.json")
+    mlflow_cfg = cfg.get("mlflow", {})
     top_k = int(serving.get("top_k_reason_codes", 5))
     t_high = float(cfg.get("thresholds", {}).get("high", 0.7))
     t_med = float(cfg.get("thresholds", {}).get("medium", 0.3))
 
-    if not model_path.exists():
-        raise FileNotFoundError("Model not found: %s" % model_path)
-    model = CatBoostClassifier()
-    model.load_model(str(model_path))
+    # Step 1: determine champion model type from MLflow @champion alias
+    champion_model_type = serving.get("champion_model", "catboost")  # config default
+    model = None
 
+    try:
+        from src.tracking.mlflow_tracker import MLflowTracker
+        registry_name = mlflow_cfg.get("registry_model_name", "fraud-detection")
+        tracker = MLflowTracker(
+            experiment_name=mlflow_cfg.get("experiment_name", "fin-risk-engine"),
+            tracking_uri=mlflow_cfg.get("tracking_uri", "mlruns"),
+        )
+        champion_info = tracker.get_champion_info(registry_name)
+        if champion_info and champion_info.get("model_type"):
+            champion_model_type = champion_info["model_type"]
+            logger.info("champion_from_registry", model_type=champion_model_type,
+                        version=champion_info.get("version"))
+            # Try loading model directly from registry
+            try:
+                model_uri = f"models:/{registry_name}@champion"
+                if champion_model_type == "catboost":
+                    import mlflow.catboost as mlflow_cb
+                    model = mlflow_cb.load_model(model_uri)
+                elif champion_model_type == "xgboost":
+                    import mlflow.xgboost as mlflow_xgb
+                    model = mlflow_xgb.load_model(model_uri)
+                if model is not None:
+                    logger.info("model_loaded_from_registry", uri=model_uri, model_type=champion_model_type)
+            except Exception as reg_exc:
+                logger.warning("registry_model_load_failed", error=str(reg_exc), fallback="file")
+                model = None
+    except Exception as mlflow_exc:
+        logger.warning("mlflow_champion_lookup_failed", error=str(mlflow_exc), fallback="file")
+
+    # Step 2: file fallback
+    if model is None:
+        if champion_model_type == "xgboost":
+            import xgboost as xgb
+            model_path = models_dir / "xgboost_fraud.json"
+            if not model_path.exists():
+                raise FileNotFoundError("Model not found: %s" % model_path)
+            model = xgb.XGBClassifier()
+            model.load_model(str(model_path))
+        else:
+            try:
+                from catboost import CatBoostClassifier
+            except ImportError:
+                raise RuntimeError("catboost not installed")
+            model_path = models_dir / serving.get("model_file", "catboost_fraud.cbm")
+            if not model_path.exists():
+                raise FileNotFoundError("Model not found: %s" % model_path)
+            model = CatBoostClassifier()
+            model.load_model(str(model_path))
+        logger.info("model_loaded_from_file", model_type=champion_model_type)
+
+    # Step 3: calibrator + feature metadata always from files (calibrator not in registry yet)
+    calibrator_path = models_dir / f"calibrator_{champion_model_type}.joblib"
     calibrator = None
     if calibrator_path.exists():
         calibrator = joblib.load(calibrator_path)
 
     feature_cols = []
     cat_cols = []
+    meta_path = models_dir / f"feature_metadata_{champion_model_type}.json"
     if meta_path.exists():
         with open(meta_path) as f:
             meta = json.load(f)
@@ -93,6 +139,7 @@ def load_artifacts() -> tuple[Any, Any, list[str], list[str], float, float, int]
             feature_cols, cat_cols = get_feature_columns(train_df, target_col="is_fraud")
     if not feature_cols:
         raise ValueError("No feature metadata and no train.parquet to infer features")
+
     return model, calibrator, feature_cols, cat_cols, t_high, t_med, top_k
 
 
@@ -300,7 +347,7 @@ def get_app():
                 impacts = [r["impact"] for r in reason_codes]
                 colors = ["#22c55e" if v <= 0 else "#ef4444" for v in impacts]
                 y_pos = np.arange(len(names))[::-1]
-                bars = ax1.barh(y_pos, impacts, color=colors, edgecolor="gray", linewidth=0.5)
+                ax1.barh(y_pos, impacts, color=colors, edgecolor="gray", linewidth=0.5)
                 ax1.axvline(0, color="black", linewidth=0.8)
                 ax1.set_yticks(y_pos)
                 ax1.set_yticklabels(names, fontsize=9)

@@ -1,6 +1,5 @@
 """Tests for src/features/splits.py -- time-based splitting and fraud rate stats."""
 import pandas as pd
-import numpy as np
 import pytest
 
 from src.features.splits import time_based_splits, split_fraud_rates

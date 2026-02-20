@@ -20,7 +20,6 @@ def get_split_boundaries(config: dict | None = None) -> tuple[str, str, str]:
         except Exception:
             config = {}  # fallback to defaults if config unavailable
     splits = config.get("splits", {})
-    time_col = splits.get("time_column", "date")
     train_end = splits.get("train_end", "2017-12-31")
     val_end = splits.get("val_end", "2019-12-31")
     test_start = splits.get("test_start", "2020-01-01")

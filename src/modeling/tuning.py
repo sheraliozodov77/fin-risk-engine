@@ -10,11 +10,10 @@ from __future__ import annotations
 import time
 from typing import Any
 
-import numpy as np
 import pandas as pd
 
 from src.logging_config import get_logger
-from src.modeling.train import get_feature_columns, _fill_cat
+from src.modeling.train import _fill_cat
 
 logger = get_logger(__name__)
 
@@ -76,6 +75,9 @@ def _catboost_objective_fast(
     model = cb.CatBoostClassifier(
         **params,
         loss_function="Logloss",
+        # PRAUC for early stopping: correctly identifies the PR-AUC peak and
+        # prevents overfitting. Logloss overshoots — the model trains longer
+        # but PR-AUC degrades. Tuned params were optimized with PRAUC stopping.
         eval_metric="PRAUC",
         early_stopping_rounds=50,
         verbose=100,

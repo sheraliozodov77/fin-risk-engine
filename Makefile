@@ -2,7 +2,8 @@
 # fin-risk-engine Makefile
 # =============================================================================
 .PHONY: help install install-dev lint test train tune evaluate serve monitor \
-        benchmark clean clean-models clean-data docker-build docker-up docker-down
+        benchmark mlflow-ui mlflow-clean clean clean-models clean-data \
+        docker-build docker-up docker-down
 
 PYTHON     := python
 PYTHONPATH := PYTHONPATH=.
@@ -17,8 +18,8 @@ help:  ## Show this help message
 # Environment
 # =============================================================================
 
-install:  ## Install core + ML dependencies
-	pip install -e ".[ml,serve,viz]"
+install:  ## Install core + ML + tracking dependencies
+	pip install -e ".[ml,serve,viz,tracking]"
 
 install-dev:  ## Install all dependencies including dev tools
 	pip install -e ".[all]"
@@ -125,6 +126,17 @@ monitor:  ## Run drift + performance monitoring (val as current)
 
 monitor-test:  ## Run monitoring with test set as current period
 	$(PYTHONPATH) $(PYTHON) scripts/run_monitoring.py --current data/processed/test.parquet
+
+# =============================================================================
+# MLflow (WS3)
+# =============================================================================
+
+mlflow-ui:  ## Open MLflow experiment browser at localhost:5000
+	mlflow ui --backend-store-uri sqlite:///mlruns/mlflow.db --port 5000
+
+mlflow-clean:  ## Remove all MLflow runs (keeps model registry)
+	rm -rf mlruns/
+	@echo "MLflow runs deleted. Registry preserved."
 
 # =============================================================================
 # Docker (WS4)

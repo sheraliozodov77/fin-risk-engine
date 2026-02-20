@@ -31,6 +31,7 @@ import pandas as pd
 from src.config import get_paths, get_model_config
 from src.logging_config import setup_logging, get_logger
 from src.modeling.train import get_feature_columns
+from src.tracking.mlflow_tracker import MLflowTracker
 from src.modeling.calibrate import fit_calibrator, apply_calibrator, brier_score
 from src.modeling.explain import get_global_importance, get_local_reason_codes_batch
 from src.modeling.advanced_metrics import (
@@ -497,13 +498,13 @@ def _write_model_card(m: dict, feature_cols, cat_cols, docs_dir: Path):
 
     if m["model_type"] == "xgboost":
         load_instructions = (
-            f'xgb.XGBClassifier(); model.load_model("outputs/models/xgboost_fraud.json")\n'
-            f'  - Load encoders: `joblib.load("outputs/models/xgboost_target_encoders.joblib")`\n'
-            f'  - Apply target encoding before prediction: `_target_encode_transform(X, cat_cols, encoders)`'
+            'xgb.XGBClassifier(); model.load_model("outputs/models/xgboost_fraud.json")\n'
+            '  - Load encoders: `joblib.load("outputs/models/xgboost_target_encoders.joblib")`\n'
+            '  - Apply target encoding before prediction: `_target_encode_transform(X, cat_cols, encoders)`'
         )
         cat_method = "Bayesian smoothed target encoding (m=100)"
     else:
-        load_instructions = f'catboost.CatBoostClassifier(); model.load_model("outputs/models/catboost_fraud.cbm")'
+        load_instructions = 'catboost.CatBoostClassifier(); model.load_model("outputs/models/catboost_fraud.cbm")'
         cat_method = "Native CatBoost handling"
 
     model_card = f"""# Model Card — Fraud Early-Warning Classifier
@@ -581,16 +582,19 @@ def main():
         logger.error("val_not_found", path=str(val_path))
         sys.exit(1)
 
-    # Load feature columns from saved metadata (avoids loading all of train.parquet ~10.7M rows)
-    # Falls back to loading train.parquet only if metadata is missing
-    meta_path = models_dir / "feature_metadata.json"
-    if meta_path.exists():
-        meta = json.loads(meta_path.read_text())
-        feature_cols = meta["feature_cols"]
-        cat_cols = meta["cat_cols"]
-        logger.info("features_from_metadata", total=len(feature_cols), categorical=len(cat_cols),
-                    model_type=meta.get("model_type"))
-    else:
+    # Load feature columns from per-model metadata (avoids loading all of train.parquet ~10.7M rows).
+    # Try catboost first, then xgboost. Falls back to train.parquet only if both are missing.
+    feature_cols, cat_cols = None, None
+    for model_prefix in ("catboost", "xgboost"):
+        meta_path = models_dir / f"feature_metadata_{model_prefix}.json"
+        if meta_path.exists():
+            meta = json.loads(meta_path.read_text())
+            feature_cols = meta["feature_cols"]
+            cat_cols = meta["cat_cols"]
+            logger.info("features_from_metadata", total=len(feature_cols),
+                        categorical=len(cat_cols), source=meta_path.name)
+            break
+    if feature_cols is None:
         logger.info("loading_train_for_features", path=str(train_path))
         train_df = pd.read_parquet(train_path)
         feature_cols, cat_cols = get_feature_columns(train_df, target_col="is_fraud")
@@ -606,6 +610,14 @@ def main():
 
     docs_dir = root / "docs"
     docs_dir.mkdir(exist_ok=True)
+
+    # MLflow setup
+    mlflow_cfg = cfg.get("mlflow", {})
+    tracker = MLflowTracker(
+        experiment_name=mlflow_cfg.get("experiment_name", "fin-risk-engine"),
+        tracking_uri=mlflow_cfg.get("tracking_uri", "mlruns"),
+    )
+    registry_name = mlflow_cfg.get("registry_model_name", "fraud-detection")
 
     if args.compare:
         # Evaluate all available models
@@ -638,6 +650,38 @@ def main():
         else:
             logger.error("no_successful_evaluations")
             sys.exit(1)
+
+        # Log each model's calibrated metrics to MLflow
+        champion = sorted(results, key=lambda r: r["pr_auc"], reverse=True)[0] if results else None
+        for result in results:
+            mtype = result["model_type"]
+            with tracker.start_run(
+                run_name=f"{mtype}-evaluate",
+                tags={"model_type": mtype, "stage": "evaluation"},
+            ):
+                tracker.log_metrics({
+                    "pr_auc": result["pr_auc"],
+                    "roc_auc": result["roc_auc"],
+                    "brier_raw": result["brier_raw"],
+                    "brier_cal": result["brier_cal"],
+                    "recall_at_p90": result["recall_at_p90"],
+                    "ks_stat": result["ks_stat"],
+                    "ece": result["ece"],
+                    "f1_at_t_high": result["cm_high"]["f1"],
+                    "f1_at_t_med": result["cm_med"]["f1"],
+                    "top_decile_lift": result["top_lift"],
+                })
+                tracker.log_artifact(models_dir / f"calibrator_{mtype}.joblib")
+                tracker.log_artifact(docs_dir / "VALIDATION_REPORT.md")
+                if champion and mtype == champion["model_type"]:
+                    tracker.set_tag("champion", "true")
+                    tracker.log_artifact(docs_dir / "MODEL_CARD.md")
+
+        # Promote champion / challenger aliases in the model registry
+        if champion:
+            tracker.promote_champion(registry_name, champion["model_type"])
+            print(f"\nPromoted champion: {champion['model_type']} (PR-AUC={champion['pr_auc']:.4f})")
+
     else:
         # Single model evaluation (original behavior)
         model_type = args.model_type or _detect_model_type(models_dir)
@@ -655,6 +699,30 @@ def main():
             sys.exit(1)
 
         _write_single_report(result, feature_cols, cat_cols, docs_dir, t_high, t_med)
+
+        with tracker.start_run(
+            run_name=f"{model_type}-evaluate",
+            tags={"model_type": model_type, "stage": "evaluation", "champion": "true"},
+        ):
+            tracker.log_metrics({
+                "pr_auc": result["pr_auc"],
+                "roc_auc": result["roc_auc"],
+                "brier_raw": result["brier_raw"],
+                "brier_cal": result["brier_cal"],
+                "recall_at_p90": result["recall_at_p90"],
+                "ks_stat": result["ks_stat"],
+                "ece": result["ece"],
+                "f1_at_t_high": result["cm_high"]["f1"],
+                "f1_at_t_med": result["cm_med"]["f1"],
+                "top_decile_lift": result["top_lift"],
+            })
+            tracker.log_artifact(models_dir / f"calibrator_{model_type}.joblib")
+            tracker.log_artifact(docs_dir / "VALIDATION_REPORT.md")
+            tracker.log_artifact(docs_dir / "MODEL_CARD.md")
+
+        # Single-model path: promote this model as champion
+        tracker.promote_champion(registry_name, model_type)
+        print(f"\nPromoted champion: {model_type} (PR-AUC={result['pr_auc']:.4f})")
 
     print("\nDone.")
 

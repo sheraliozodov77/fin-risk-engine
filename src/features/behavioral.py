@@ -214,8 +214,10 @@ def add_velocity_and_monetary(
 
     # Explicitly free memory before returning
     del df_small, feat, dates_ns, amounts, entity_vals
-    if merch_vals is not None: del merch_vals
-    if mcc_vals is not None:   del mcc_vals
+    if merch_vals is not None:
+        del merch_vals
+    if mcc_vals is not None:
+        del mcc_vals
     gc.collect()
 
     return df
@@ -351,8 +353,10 @@ def add_behavioral_features(
             if w:
                 def _min_to_offset(m: int) -> str:
                     m = int(m)
-                    if m < 60:   return f"{m}min"
-                    if m < 1440: return f"{m // 60}h"
+                    if m < 60:
+                        return f"{m}min"
+                    if m < 1440:
+                        return f"{m // 60}h"
                     return f"{m // 1440}d"
                 key_map = {"short_min": "10m", "hour_min": "1h", "day_min": "24h", "week_min": "7d"}
                 windows = {

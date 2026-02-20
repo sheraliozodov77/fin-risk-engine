@@ -52,7 +52,6 @@ def performance_by_period(
     df = df.dropna(subset=[time_col])
     df = df.sort_values(time_col)
     X = _prepare_X(df, feature_cols, cat_cols)
-    y = df[target_col].astype(int).values
     if hasattr(model, "predict_proba"):
         proba = model.predict_proba(X)[:, 1]
     else:
