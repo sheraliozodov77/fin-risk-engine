@@ -577,30 +577,12 @@ def get_app():
         with gr.Blocks(title="fin-risk-engine -- Fraud Risk Scoring") as demo:
 
             # -- Header --------------------------------------------------------
-            gr.Markdown("""# fin-risk-engine -- Real-Time Fraud Risk Scoring
-Scores a single bank transaction using calibrated ML.
-Returns a fraud probability, risk alert level, and top SHAP reason codes.
-""")
-            champion_banner = gr.Markdown(value="⏳ Loading model info...")
-
-            with gr.Accordion(
-                "📊 Model performance on held-out test set (2020 -- never seen during training or tuning)",
-                open=False,
-            ):
-                gr.Markdown("""
-| Metric | CatBoost 🏆 Champion | XGBoost | Winner |
-|--------|:-------------------:|:-------:|:------:|
-| **PR-AUC** | **0.854** | 0.847 | CatBoost |
-| ROC-AUC | **0.999** | 0.999 | Tie |
-| Brier (calibrated) | **0.000527** | 0.000555 | CatBoost |
-| Recall @ 90% Precision | 0.600 | **0.643** | XGBoost |
-| KS Statistic | 0.977 | **0.979** | Tie |
-| F1 @ T_high (0.70) | 0.694 | **0.776** | XGBoost |
-| F1 @ T_med (0.30) | **0.797** | 0.789 | CatBoost |
-
-Zero val→test degradation confirms no overfitting across a 2-year temporal gap.
-Dataset: CaixaBank Tech 2024 AI Hackathon * 13.3M transactions * 0.15% fraud rate.
-""")
+            # -- Header --------------------------------------------------------
+            gr.Markdown("# fin-risk-engine -- Real-Time Fraud Risk Scoring")
+            gr.Markdown(
+                "Scores a single bank transaction using calibrated ML. "
+                "Returns a fraud probability, alert level, and top SHAP reason codes."
+            )
 
             gr.Markdown("---")
 
@@ -631,6 +613,30 @@ Dataset: CaixaBank Tech 2024 AI Hackathon * 13.3M transactions * 0.15% fraud rat
                         value="_Load a sample and click **Score Transaction** to see the risk assessment._"
                     )
                     out_plot = gr.Plot(show_label=False)
+
+            gr.Markdown("---")
+
+            # -- Champion banner + performance (below the scoring columns) -----
+            champion_banner = gr.Markdown(value="⏳ Loading model info...")
+
+            with gr.Accordion(
+                "📊 Model performance on held-out test set (2020 -- never seen during training or tuning)",
+                open=False,
+            ):
+                gr.Markdown("""
+| Metric | CatBoost 🏆 Champion | XGBoost | Winner |
+|--------|:-------------------:|:-------:|:------:|
+| **PR-AUC** | **0.854** | 0.847 | CatBoost |
+| ROC-AUC | **0.999** | 0.999 | Tie |
+| Brier (calibrated) | **0.000527** | 0.000555 | CatBoost |
+| Recall @ 90% Precision | 0.600 | **0.643** | XGBoost |
+| KS Statistic | 0.977 | **0.979** | Tie |
+| F1 @ T_high (0.70) | 0.694 | **0.776** | XGBoost |
+| F1 @ T_med (0.30) | **0.797** | 0.789 | CatBoost |
+
+Zero val→test degradation confirms no overfitting across a 2-year temporal gap.
+Dataset: CaixaBank Tech 2024 AI Hackathon -- 13.3M transactions -- 0.15% fraud rate.
+""")
 
             # -- Footer --------------------------------------------------------
             gr.Markdown("""---
