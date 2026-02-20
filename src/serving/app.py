@@ -46,7 +46,7 @@ def load_artifacts() -> tuple[Any, Any, list[str], list[str], float, float, int]
     1. MLflow registry @champion alias (source of truth for champion model type)
     2. File fallback (outputs/models/) if registry unavailable or alias not set
 
-    Calibrator and feature metadata always loaded from files (not in MLflow yet — WS4).
+    Calibrator and feature metadata always loaded from files (not in MLflow yet -- WS4).
     Returns (model, calibrator, feature_cols, cat_cols, t_high, t_med, top_k).
     """
     import joblib
@@ -312,73 +312,242 @@ def get_app():
                 out.append({"error": str(e), "risk_score": None, "level": None, "reason_codes": []})
         return {"scores": out}
 
-    # Mount Gradio UI at /gradio
+    # -- Gradio UI -------------------------------------------------------------
     try:
+        import math
+
         import gradio as gr
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
         import numpy as np
 
-        def _make_score_charts(risk_score: float, level: str, reason_codes: list[dict]) -> plt.Figure | None:
-            """Build a figure: risk gauge + SHAP horizontal bar chart. For interview/demo."""
-            fig, axes = plt.subplots(2, 1, figsize=(7, 4), height_ratios=[1, 1.8])
-            fig.set_facecolor("#fafafa")
-            # 1) Risk score gauge (horizontal bar 0–100% with zones)
-            ax0 = axes[0]
-            ax0.set_xlim(0, 1)
-            ax0.set_ylim(0, 1)
-            ax0.axis("off")
-            # Background zones
-            ax0.axhspan(0, 1, 0, _t_med, facecolor="#22c55e", alpha=0.25)
-            ax0.axhspan(0, 1, _t_med, _t_high, facecolor="#eab308", alpha=0.25)
-            ax0.axhspan(0, 1, _t_high, 1, facecolor="#ef4444", alpha=0.25)
-            ax0.barh(0.5, risk_score, height=0.4, color="#0ea5e9", edgecolor="#0369a1", linewidth=1.5)
-            ax0.axvline(_t_med, color="gray", linestyle="--", linewidth=1)
-            ax0.axvline(_t_high, color="gray", linestyle="--", linewidth=1)
-            ax0.set_xlabel("Fraud probability")
-            ax0.set_title(f"Risk score: {risk_score:.1%}  —  {level}")
-            ax0.set_xticks([0, _t_med, _t_high, 1])
-            ax0.set_xticklabels(["0%", f"{_t_med:.0%}", f"{_t_high:.0%}", "100%"])
-            # 2) SHAP reason codes (horizontal bars)
-            ax1 = axes[1]
+        # -- Helper: champion model info for the header banner -----------------
+        _PERF_STATS = {
+            "catboost": "PR-AUC **0.854** | ROC-AUC **0.999** | Recall@P90 **0.600** | Brier **0.000527**",
+            "xgboost":  "PR-AUC **0.847** | ROC-AUC **0.999** | Recall@P90 **0.643** | Brier **0.000555**",
+        }
+
+        def _get_champion_banner() -> str:
+            mtype = "catboost"
+            version = "--"
+            try:
+                from src.config import get_model_config
+                cfg = get_model_config()
+                mlflow_cfg = cfg.get("mlflow", {})
+                from src.tracking.mlflow_tracker import MLflowTracker
+                tracker = MLflowTracker(
+                    experiment_name=mlflow_cfg.get("experiment_name", "fin-risk-engine"),
+                    tracking_uri=mlflow_cfg.get("tracking_uri", "mlruns"),
+                )
+                info = tracker.get_champion_info(mlflow_cfg.get("registry_model_name", "fraud-detection"))
+                if info and info.get("model_type"):
+                    mtype = info["model_type"].lower()
+                    version = str(info.get("version", "--"))
+            except Exception:
+                pass
+            perf = _PERF_STATS.get(mtype, _PERF_STATS["catboost"])
+            n_feat = len(_feature_cols) or 99
+            n_cat  = len(_cat_cols) or 9
+            return (
+                f"🏆 **Champion: {mtype.upper()}** (registry v{version})  *  "
+                f"Test set 2020 (held-out): {perf}  *  "
+                f"**{n_feat}** features ({n_cat} categorical)  *  "
+                f"Thresholds: HIGH ≥ {_t_high:.0%} | MED ≥ {_t_med:.0%}"
+            )
+
+        # -- Helper: load sample row from test set -----------------------------
+        def _safe_json_val(v: Any) -> Any:
+            """Convert pandas/numpy scalars to plain Python for json.dumps."""
+            try:
+                if pd.isna(v):
+                    return None
+            except (TypeError, ValueError):
+                pass
+            if hasattr(v, "item"):
+                return v.item()
+            return v
+
+        def _get_sample_by_label(want_fraud: bool | None = None) -> tuple[str, str]:
+            """Return (json_str, ground_truth_md) for one row from test.parquet."""
+            from src.config import get_paths
+            root = _project_root()
+            paths = get_paths()
+            processed = paths.get("data", {}).get("processed", {})
+            for _, rel in [
+                ("test", processed.get("test", "data/processed/test.parquet")),
+                ("val",  processed.get("val",  "data/processed/val.parquet")),
+            ]:
+                data_path = Path(rel) if Path(rel).is_absolute() else root / rel
+                if not data_path.exists():
+                    continue
+                df = pd.read_parquet(data_path)
+                if len(df) == 0:
+                    continue
+                # Filter to labeled rows
+                if "is_fraud" in df.columns:
+                    df = df.dropna(subset=["is_fraud"])
+                if want_fraud is not None and "is_fraud" in df.columns:
+                    subset = df[df["is_fraud"].astype(int) == int(want_fraud)]
+                    df = subset if len(subset) > 0 else df
+                if len(df) == 0:
+                    continue
+                row = df.sample(n=1, random_state=None).iloc[0]
+                # Ground truth label
+                label_md = ""
+                if "is_fraud" in row.index:
+                    lv = int(row["is_fraud"])
+                    label_md = (
+                        "**Ground truth:** 🔴 FRAUD -- this is a confirmed fraudulent transaction"
+                        if lv == 1 else
+                        "**Ground truth:** 🟢 LEGITIMATE -- this is a normal transaction"
+                    )
+                # Feature JSON (only model features)
+                feat_cols = [c for c in _feature_cols if c in row.index]
+                feat_dict = {k: _safe_json_val(row[k]) for k in feat_cols}
+                return json.dumps(feat_dict, indent=2), label_md
+            return "", ""
+
+        # -- Helper: SHAP + gauge chart ----------------------------------------
+        def _make_risk_chart(risk_score: float, level: str, reason_codes: list[dict]) -> plt.Figure:
+            """Professional risk gauge (top) + SHAP waterfall bar (bottom)."""
+            n = max(len(reason_codes), 1)
+            lc = {"HIGH": "#dc2626", "MEDIUM": "#d97706", "LOW": "#16a34a"}.get(level, "#64748b")
+            lb = {"HIGH": "#fee2e2", "MEDIUM": "#fef3c7", "LOW": "#dcfce7"}.get(level, "#f8fafc")
+
+            fig, axes = plt.subplots(
+                2, 1,
+                figsize=(9.5, 2.6 + n * 0.52),
+                gridspec_kw={"height_ratios": [1.5, n], "hspace": 0.55},
+            )
+            fig.patch.set_facecolor("#ffffff")
+
+            # -- Gauge ---------------------------------------------------------
+            ax = axes[0]
+            ax.set_facecolor(lb)
+            ax.set_xlim(0, 1)
+            ax.set_ylim(0, 1)
+            ax.axis("off")
+
+            ax.axhspan(0, 1, 0,      _t_med,  facecolor="#bbf7d0", alpha=0.55, zorder=0)
+            ax.axhspan(0, 1, _t_med,  _t_high, facecolor="#fde68a", alpha=0.55, zorder=0)
+            ax.axhspan(0, 1, _t_high, 1,       facecolor="#fecaca", alpha=0.55, zorder=0)
+
+            ax.barh(0.5, risk_score, height=0.52,
+                    color=lc, alpha=0.92, edgecolor="white", linewidth=2, zorder=2)
+            ax.axvline(_t_med,  color="#64748b", ls="--", lw=1.2, zorder=3)
+            ax.axvline(_t_high, color="#64748b", ls="--", lw=1.2, zorder=3)
+
+            # Zone labels
+            for x, txt, col in [
+                (_t_med / 2,              "LOW",  "#15803d"),
+                ((_t_med + _t_high) / 2,  "MED",  "#92400e"),
+                ((_t_high + 1) / 2,       "HIGH", "#991b1b"),
+            ]:
+                ax.text(x, 0.08, txt, ha="center", va="bottom",
+                        fontsize=8, color=col, fontweight="bold", zorder=4)
+
+            ax.set_xticks([0, _t_med, _t_high, 1])
+            ax.set_xticklabels(["0%", f"{_t_med:.0%}", f"{_t_high:.0%}", "100%"], fontsize=9)
+            ax.set_title(
+                f"Fraud probability: {risk_score:.2%}     *     Alert level: {level}",
+                fontsize=12, fontweight="bold", color=lc, pad=5,
+            )
+
+            # -- SHAP bar chart -------------------------------------------------
+            ax2 = axes[1]
             if reason_codes:
-                names = [r["feature"] for r in reason_codes]
-                impacts = [r["impact"] for r in reason_codes]
-                colors = ["#22c55e" if v <= 0 else "#ef4444" for v in impacts]
-                y_pos = np.arange(len(names))[::-1]
-                ax1.barh(y_pos, impacts, color=colors, edgecolor="gray", linewidth=0.5)
-                ax1.axvline(0, color="black", linewidth=0.8)
-                ax1.set_yticks(y_pos)
-                ax1.set_yticklabels(names, fontsize=9)
-                ax1.set_xlabel("SHAP value (impact on model output)\n(positive = higher risk, negative = lower risk)")
-                ax1.set_title("Why this score? — Feature contributions (SHAP)")
+                names   = [r["feature"]       for r in reason_codes]
+                impacts = [r["impact"]         for r in reason_codes]
+                values  = [r.get("value", "")  for r in reason_codes]
+
+                y_pos  = np.arange(len(names))
+                colors = ["#ef4444" if v > 0 else "#3b82f6" for v in impacts]
+
+                ax2.barh(y_pos, impacts, color=colors, alpha=0.87,
+                         edgecolor="white", linewidth=0.4, height=0.68)
+                ax2.axvline(0, color="#0f172a", linewidth=1.0)
+
+                ylabels = []
+                for nm, val in zip(names, values):
+                    display = nm.replace("_", " ")
+                    if val and str(val) not in ("(missing)", "None", "nan", "-999", ""):
+                        short = str(val)[:20]
+                        ylabels.append(f"{display}  [{short}]")
+                    else:
+                        ylabels.append(display)
+
+                ax2.set_yticks(y_pos)
+                ax2.set_yticklabels(ylabels, fontsize=8.5)
+                ax2.invert_yaxis()          # Most impactful at top
+                ax2.set_xlabel(
+                    "SHAP value  (positive  →  raises fraud risk     negative  →  lowers fraud risk)",
+                    fontsize=8.5,
+                )
+                ax2.set_title(
+                    "Why this score?  --  Top feature contributions (SHAP)",
+                    fontsize=10, fontweight="bold",
+                )
+                ax2.grid(axis="x", alpha=0.22, linestyle="--")
+                ax2.spines[["top", "right"]].set_visible(False)
             else:
-                ax1.text(0.5, 0.5, "No reason codes", ha="center", va="center", transform=ax1.transAxes)
-            plt.tight_layout()
+                ax2.text(0.5, 0.5, "No SHAP reason codes computed",
+                         ha="center", va="center", transform=ax2.transAxes,
+                         fontsize=10, color="#94a3b8")
+                ax2.axis("off")
+
+            fig.tight_layout()
             return fig
 
-        def _shap_plain(impact: float) -> str:
-            abs_impact = abs(impact)
-            if abs_impact >= 2.0:
-                strength = "**Strongly**"
-            elif abs_impact >= 1.0:
-                strength = "**Moderately**"
-            else:
-                strength = "**Slightly**"
-            return f"{strength} {'increased' if impact > 0 else 'decreased'} risk"
+        # -- Helper: format result markdown -----------------------------------
+        def _format_result(out: dict, ground_truth_md: str = "") -> str:
+            level  = out["level"]
+            score  = out["risk_score"]
+            icon   = {"HIGH": "🔴", "MEDIUM": "🟡", "LOW": "🟢"}.get(level, "⚪")
+            action = {
+                "HIGH":   "**Recommended action:** Block transaction / route to manual review",
+                "MEDIUM": "**Recommended action:** Step-up authentication / flag for watchlist",
+                "LOW":    "**Recommended action:** Auto-approve",
+            }.get(level, "")
+            lines = [
+                f"## {icon} {level} RISK -- {score:.2%}",
+                "",
+                action,
+            ]
+            if ground_truth_md:
+                lines += ["", ground_truth_md]
+            lines += [
+                "",
+                "---",
+                "### Feature contributions (SHAP)",
+                "Positive values raise the fraud probability; negative values lower it.",
+                "",
+                "| # | Feature | Observed value | SHAP impact | Direction |",
+                "|---|---------|---------------|-------------|-----------|",
+            ]
+            for i, r in enumerate(out["reason_codes"], 1):
+                direction = "⬆ raises risk" if r["impact"] > 0 else "⬇ lowers risk"
+                val = r.get("value", "--")
+                lines.append(
+                    f"| {i} | `{r['feature']}` | {val} | `{r['impact']:+.3f}` | {direction} |"
+                )
+            if not out["reason_codes"]:
+                lines.append("_No reason codes computed._")
+            return "\n".join(lines)
+
+        # -- Gradio event handlers ---------------------------------------------
+        _last_truth: list[str] = [""]   # mutable closure container
 
         def _gradio_score(features_json: str):
-            yield "⏳ **Scoring...**", None
+            yield "⏳ Scoring...", None
             if not _model:
-                yield "**Error:** Model not loaded. Check server startup.", None
+                yield "**Error:** Model not loaded. Check server startup logs.", None
                 return
             try:
                 features = json.loads(features_json)
             except json.JSONDecodeError as e:
-                yield f"**Invalid JSON:** {e}", None
+                yield f"**Invalid JSON:** {e}\n\nCheck the JSON syntax and try again.", None
                 return
-            # Use more factors for Gradio so we list each contributing factor (official SHAP style)
             top_k_display = min(15, len(_feature_cols))
             try:
                 out = _score_one(
@@ -388,69 +557,97 @@ def get_app():
             except Exception as e:
                 yield f"**Scoring error:** {e}", None
                 return
-            level_desc = {"HIGH": "🔴 **Review or block** — high fraud probability.",
-                         "MEDIUM": "🟡 **Step-up auth / watchlist** — moderate risk.",
-                         "LOW": "🟢 **Allow** — low risk."}
-            lines = [
-                "### Risk score",
-                f"**{out['risk_score']:.2%}** — estimated probability of fraud (0–100%).",
-                "",
-                "### Alert level",
-                level_desc.get(out["level"], out["level"]),
-                "",
-                "### Why this score? — Each factor (SHAP value = impact on model output)",
-                "Listed in order of |impact|. **Positive SHAP** = factor pushes score up (higher risk). **Negative SHAP** = factor pushes score down (lower risk).",
-                ""
-            ]
-            for r in out["reason_codes"]:
-                interp = _shap_plain(r["impact"])
-                val_str = r.get("value", "")
-                lines.append(f"- **{r['feature']}** = `{val_str}` — SHAP **{r['impact']:+.2f}** — {interp}")
-            if not out["reason_codes"]:
-                lines.append("_No reason codes computed._")
-            fig = _make_score_charts(out["risk_score"], out["level"], out["reason_codes"])
-            yield "\n".join(lines), fig
+            md  = _format_result(out, _last_truth[0])
+            fig = _make_risk_chart(out["risk_score"], out["level"], out["reason_codes"])
+            yield md, fig
 
-        def _load_test_sample():
-            sample = _get_one_test_sample()
-            return sample if sample else ""
+        def _load_fraud():
+            j, label = _get_sample_by_label(want_fraud=True)
+            _last_truth[0] = label
+            return j, label
 
-        def _get_model_info_md():
-            """Return model info string at runtime (after startup has set _feature_cols)."""
-            n_f, n_c = len(_feature_cols), len(_cat_cols)
-            return f"**Model loaded:** **{n_f}** features (**{n_c}** categorical). Thresholds: HIGH ≥ {_t_high:.0%}, MED ≥ {_t_med:.0%}."
+        def _load_legit():
+            j, label = _get_sample_by_label(want_fraud=False)
+            _last_truth[0] = label
+            return j, label
 
-        with gr.Blocks(title="Fraud Risk Scoring") as demo:
-            gr.Markdown("""# Fraud Risk Scoring
+        def _on_page_load():
+            j, label = _get_sample_by_label()
+            _last_truth[0] = label
+            banner = _get_champion_banner()
+            return banner, j, label
 
-**What this does:** This app scores a single transaction for fraud risk using a trained CatBoost model and calibrated probabilities. You get an estimated fraud probability (0–100%), an alert level (LOW / MEDIUM / HIGH), and the top factors that pushed the score up or down (SHAP reason codes).
+        # -- Gradio layout -----------------------------------------------------
+        with gr.Blocks(title="fin-risk-engine -- Fraud Risk Scoring") as demo:
 
-**How to use:**
-- **Paste JSON** — Paste a transaction’s features as JSON (same feature names as in training). Missing features are filled with defaults; for best accuracy, include all features.
-- **Load sample from test set** — Fills the box with a random transaction from the validation/test set so you can try different examples.
-- **Score** — Runs the model and shows risk score, alert level, and reason codes.
-
-**Alert levels:** HIGH (≥70%) → review or block | MEDIUM (30–70%) → step-up / watchlist | LOW (&lt;30%) → allow.
+            # -- Header --------------------------------------------------------
+            gr.Markdown("""# fin-risk-engine -- Real-Time Fraud Risk Scoring
+Scores a single bank transaction using calibrated ML.
+Returns a fraud probability, risk alert level, and top SHAP reason codes.
 """)
-            model_info_md = gr.Markdown(value="**Model loaded:** loading...")
+            champion_banner = gr.Markdown(value="⏳ Loading model info...")
+
+            with gr.Accordion(
+                "📊 Model performance on held-out test set (2020 -- never seen during training or tuning)",
+                open=False,
+            ):
+                gr.Markdown("""
+| Metric | CatBoost 🏆 Champion | XGBoost | Winner |
+|--------|:-------------------:|:-------:|:------:|
+| **PR-AUC** | **0.854** | 0.847 | CatBoost |
+| ROC-AUC | **0.999** | 0.999 | Tie |
+| Brier (calibrated) | **0.000527** | 0.000555 | CatBoost |
+| Recall @ 90% Precision | 0.600 | **0.643** | XGBoost |
+| KS Statistic | 0.977 | **0.979** | Tie |
+| F1 @ T_high (0.70) | 0.694 | **0.776** | XGBoost |
+| F1 @ T_med (0.30) | **0.797** | 0.789 | CatBoost |
+
+Zero val→test degradation confirms no overfitting across a 2-year temporal gap.
+Dataset: CaixaBank Tech 2024 AI Hackathon * 13.3M transactions * 0.15% fraud rate.
+""")
+
+            gr.Markdown("---")
+
+            # -- Main two-column panel -----------------------------------------
             with gr.Row():
-                inp = gr.Textbox(
-                    label="Features (JSON)",
-                    placeholder="Click 'Load sample from test set' to load a full row, or paste JSON (same feature names as in training).",
-                    value="",
-                    lines=14,
-                )
-            with gr.Row():
-                btn_score = gr.Button("Score", variant="primary")
-                btn_load_test = gr.Button("Load sample from test set")
-            out = gr.Markdown(label="Result")
-            out_plot = gr.Plot(label="Risk & reason codes")
-            btn_score.click(fn=_gradio_score, inputs=inp, outputs=[out, out_plot])
-            btn_load_test.click(fn=_load_test_sample, inputs=[], outputs=inp)
-            def _on_page_load():
-                return _get_model_info_md(), _load_test_sample()
-            demo.load(fn=_on_page_load, inputs=[], outputs=[model_info_md, inp])
-            gr.Markdown("---\n**API:** `POST /score` with body `{\"features\": {...}}`  |  **Docs:** [/docs](/docs)")
+                # Left: input
+                with gr.Column(scale=1):
+                    gr.Markdown("### 📋 Transaction Features")
+                    gr.Markdown(
+                        "Load a sample or paste your own JSON. "
+                        "Feature names match the training schema (99 features: 44 static + 55 behavioral rolling-window)."
+                    )
+                    inp = gr.Textbox(
+                        label="Features (JSON)",
+                        placeholder="Click a Load button below, or paste transaction JSON here.",
+                        lines=22,
+                    )
+                    true_label = gr.Markdown(value="")
+                    with gr.Row():
+                        btn_fraud = gr.Button("🔴 Load Fraud Sample",      variant="secondary", size="sm")
+                        btn_legit = gr.Button("🟢 Load Legitimate Sample", variant="secondary", size="sm")
+                    btn_score = gr.Button("▶  Score Transaction", variant="primary", size="lg")
+
+                # Right: results
+                with gr.Column(scale=1):
+                    gr.Markdown("### 🎯 Risk Assessment")
+                    result_md = gr.Markdown(
+                        value="_Load a sample and click **Score Transaction** to see the risk assessment._"
+                    )
+                    out_plot = gr.Plot(show_label=False)
+
+            # -- Footer --------------------------------------------------------
+            gr.Markdown("""---
+**Decision policy:**  🔴 HIGH (≥ 70%) → Block / route to manual review  *  🟡 MEDIUM (30-70%) → Step-up authentication  *  🟢 LOW (< 30%) → Auto-approve
+
+**API endpoints:** `POST /score` * `POST /score_batch` * [`GET /model_info`](/model_info) * [`GET /sample_from_test`](/sample_from_test) * [`GET /health`](/health) * [`API Docs`](/docs)
+""")
+
+            # -- Event wiring --------------------------------------------------
+            btn_score.click(fn=_gradio_score, inputs=inp, outputs=[result_md, out_plot])
+            btn_fraud.click(fn=_load_fraud,   inputs=[], outputs=[inp, true_label])
+            btn_legit.click(fn=_load_legit,   inputs=[], outputs=[inp, true_label])
+            demo.load(fn=_on_page_load, inputs=[], outputs=[champion_banner, inp, true_label])
 
         app = gr.mount_gradio_app(app, demo, path="/gradio")
     except ImportError:
